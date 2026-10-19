@@ -1,0 +1,21 @@
+{
+	"name": "جزيرة العائلة",
+	"short_name": "جزيرة العائلة",
+	"description": "لعبة هادئة لأطفال العائلة",
+	"lang": "ar",
+	"dir": "rtl",
+	"id": "./",
+	"start_url": "./index.html",
+	"scope": "./",
+	"display": "fullscreen",
+	"display_override": ["fullscreen", "standalone"],
+	"orientation": "landscape",
+	"background_color": "#9bd4c3",
+	"theme_color": "#9bd4c3",
+	"categories": ["games", "kids"],
+	"icons": [
+		{ "src": "icons/icon_192.png", "sizes": "192x192", "type": "image/png" },
+		{ "src": "icons/icon_512.png", "sizes": "512x512", "type": "image/png" },
+		{ "src": "icons/icon_maskable_512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+	]
+}

@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<!-- Family Island web shell (Godot custom HTML shell). Owner: web team. See docs/WEB.md. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>جزيرة العائلة</title>
+<meta name="description" content="لعبة هادئة لأطفال العائلة">
+<meta name="theme-color" content="#9bd4c3">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="جزيرة العائلة">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="index.manifest.json">
+<link rel="icon" type="image/png" href="icons/icon_32.png">
+<link rel="apple-touch-icon" href="icons/icon_180.png">
+<style>
+:root {
+	--sea: #9bd4c3;
+	--sea-deep: #6fb8b0;
+	--sand: #f2d9a0;
+	--wood: #8a5a3b;
+	--wood-dark: #6b4329;
+	--leaf: #5aa152;
+	--ink: #4a3426;
+	--cream: #fff8e8;
+	font-family: "SF Arabic Rounded", "SF Arabic", "Geeza Pro", "Almarai", "Noto Sans Arabic", "Noto Naskh Arabic", Tahoma, sans-serif;
+}
+html, body {
+	margin: 0; padding: 0; border: 0;
+	width: 100%; height: 100%;
+	overflow: hidden;
+	background: var(--sea);
+	/* no pinch/double-tap zoom, no pull-to-refresh, no selection, no long-press callout */
+	touch-action: none;
+	overscroll-behavior: none;
+	-webkit-user-select: none; user-select: none;
+	-webkit-touch-callout: none;
+	-webkit-tap-highlight-color: transparent;
+	-webkit-text-size-adjust: 100%;
+}
+body { position: fixed; inset: 0; }
+/* The game lives inside the safe area (notch, home indicator); the sea colour fills the rest. */
+#stage {
+	position: fixed;
+	top: env(safe-area-inset-top, 0px);
+	right: env(safe-area-inset-right, 0px);
+	bottom: env(safe-area-inset-bottom, 0px);
+	left: env(safe-area-inset-left, 0px);
+}
+#canvas { display: block; position: absolute; left: 0; top: 0; outline: none; }
+
+/* ---------- loading screen ---------- */
+#loader {
+	position: fixed; inset: 0; z-index: 10;
+	display: flex; flex-direction: column; align-items: center; justify-content: center;
+	gap: min(3.2vh, 22px);
+	background: linear-gradient(#bfe6dc 0%, var(--sea) 55%, var(--sea-deep) 100%);
+	color: var(--ink);
+	transition: opacity .45s ease;
+	padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+#loader.gone { opacity: 0; pointer-events: none; }
+/* G-19: the owner's illustration (icons/loading_hd.png 960x540, else icons/loading.png 480x270) drawn at a WHOLE
+   number of device pixels per art pixel (fitArt() below), so it is never blurred or unevenly stretched; the strips the
+   integer scale leaves free show the sky / sand colours of the picture itself. */
+#loader.art { background: linear-gradient(var(--art-top, #8fd0f0) 50%, var(--art-bottom, #f4d396) 50%); justify-content: space-between; padding-top: max(6vh, env(safe-area-inset-top)); padding-bottom: max(5vh, env(safe-area-inset-bottom)); }
+#loader.art .island, #loader.art .waves { display: none; }
+#artwrap { position: absolute; inset: 0; overflow: hidden; z-index: -1; display: none; }
+#loader.art #artwrap { display: block; }
+#art { position: absolute; image-rendering: pixelated; image-rendering: crisp-edges; max-width: none; }
+#loader.art #status { background: rgba(253, 236, 207, .92); border-radius: 10px; padding: 2px 12px; }
+#loader.art .bottom { display: flex; flex-direction: column; align-items: center; gap: min(2vh, 14px); }
+/* G-19: a little life — Lina, Sami and their animals walk along the beach (the owner's walk sheets, CSS steps()). */
+#parade { position: absolute; left: 0; right: 0; height: 0; pointer-events: none; }
+.walker { position: absolute; bottom: 0; background-repeat: no-repeat; image-rendering: pixelated; image-rendering: crisp-edges;
+	animation: var(--steps) steps(var(--n)) infinite; }
+.walker.flip { transform: scaleX(-1); }
+.troop { position: absolute; bottom: 0; left: 100%; animation: cross var(--cross, 26s) linear infinite; animation-delay: var(--delay, 0s); }
+@keyframes cross { from { transform: translateX(0); } to { transform: translateX(calc(-100vw - 100%)); } }
+@media (prefers-reduced-motion: reduce) { .troop, .walker { animation: none; } #parade { display: none; } }
+#loader h1 { position: relative; }
+#loader h1 {
+	margin: 0; font-size: clamp(30px, 7vmin, 64px); font-weight: 800;
+	color: var(--cream);
+	text-shadow: 0 3px 0 var(--wood-dark), 0 6px 14px rgba(40, 70, 60, .35);
+	letter-spacing: 0;
+}
+.island { position: relative; width: min(34vmin, 220px); height: min(20vmin, 130px); }
+.island .sand { position: absolute; inset: 35% 0 0 0; background: var(--sand); border-radius: 50% 50% 46% 46%; box-shadow: 0 0 0 6px #e8f6ef; }
+.island .grass { position: absolute; inset: 42% 18% 18% 18%; background: #7cc06a; border-radius: 50%; }
+.island .trunk { position: absolute; left: 47%; width: 6%; top: 20%; height: 40%; background: var(--wood); border-radius: 3px; }
+.island .leaves { position: absolute; left: 34%; width: 32%; top: 0; height: 42%; background: #3f8f4a; border-radius: 50%; animation: sway 3.2s ease-in-out infinite; transform-origin: 50% 100%; }
+.island .sun { position: absolute; right: -6%; top: -12%; width: 18%; aspect-ratio: 1; background: #ffd66b; border-radius: 50%; }
+@keyframes sway { 50% { transform: rotate(4deg); } }
+.waves { width: min(60vmin, 380px); height: 10px; background: radial-gradient(circle at 10px -4px, transparent 9px, #e8f6ef 10px, transparent 11px) 0 0 / 20px 10px repeat-x; opacity: .8; animation: drift 3s linear infinite; }
+@keyframes drift { to { background-position: -20px 0; } }
+#bar {
+	width: min(60vmin, 380px); height: 22px; box-sizing: border-box;
+	border: 4px solid var(--wood-dark); border-radius: 14px; background: var(--cream); overflow: hidden;
+	box-shadow: 0 3px 0 rgba(0,0,0,.15);
+}
+#bar i { display: block; height: 100%; width: 0%; background: repeating-linear-gradient(-45deg, #f6c75c 0 10px, #f2b844 10px 20px); border-radius: 0 8px 8px 0; transition: width .2s; float: right; }
+#status { margin: 0; font-size: clamp(16px, 3vmin, 24px); font-weight: 700; color: var(--ink); min-height: 1.4em; text-align: center; }
+#start {
+	display: none;
+	font: inherit; font-size: clamp(24px, 5vmin, 40px); font-weight: 800;
+	color: #fdeccf; background: none;
+	/* G-19: the owner's wooden button (icons/ui_button.png, 6 px corners) — the same piece the in-game panels use */
+	border: 0 solid transparent; border-width: var(--bw, 18px);
+	border-image: url(icons/ui_button.png) 6 fill / var(--bw, 18px) stretch;
+	image-rendering: pixelated; image-rendering: crisp-edges;
+	padding: 0 .9em .1em;
+	min-width: 6.5em;
+	text-shadow: 0 2px 0 #6e3f29, 2px 0 0 #6e3f29, -2px 0 0 #6e3f29, 0 -2px 0 #6e3f29;
+	filter: drop-shadow(0 6px 10px rgba(19, 40, 44, .28));
+	cursor: pointer; touch-action: manipulation;
+	animation: bob 1.6s ease-in-out infinite;
+}
+#start:hover { filter: drop-shadow(0 6px 10px rgba(19, 40, 44, .28)) brightness(1.08); }
+#start:focus { outline: none; }
+#start:focus-visible { filter: drop-shadow(0 0 0 #ffd34d) drop-shadow(0 0 4px #ffd34d); }
+#start:active { border-image-source: url(icons/ui_button_pressed.png); transform: translateY(3px); animation: none; }
+@keyframes bob { 50% { transform: translateY(-4px); } }
+#loader.ready #bar, #loader.ready .waves { display: none; }
+#loader.ready #start { display: block; }
+#notice { display: none; max-width: 80vw; background: var(--cream); border: 3px solid #c0705a; border-radius: 14px; padding: 12px 18px; font-size: 18px; line-height: 1.5; text-align: center; white-space: pre-line; }
+#loader.error #notice { display: block; }
+/* G-01: which build this is (faint, bottom corner) + the "new version" banner */
+#build { position: absolute; left: max(10px, env(safe-area-inset-left)); bottom: max(6px, env(safe-area-inset-bottom)); margin: 0;
+	font-size: 12px; font-weight: 600; color: rgba(19, 40, 44, .55); background: rgba(253, 236, 207, .45); border-radius: 6px; padding: 1px 8px; direction: rtl; }
+#updating { display: none; position: fixed; z-index: 30; top: 12px; left: 50%; transform: translateX(-50%); background: #fdeccf;
+	color: var(--ink); border: 3px solid #9a522d; border-radius: 12px; padding: 6px 16px; font-size: 18px; font-weight: 700; }
+#updating.on { display: block; }
+#loader.error #bar, #loader.error #start, #loader.error .waves { display: none; }
+
+/* ---------- portrait overlay (touch devices only) ---------- */
+#rotate {
+	display: none; position: fixed; inset: 0; z-index: 20;
+	background: var(--sea); color: var(--ink);
+	flex-direction: column; align-items: center; justify-content: center; gap: 24px;
+	font-size: clamp(20px, 5vw, 30px); font-weight: 800; text-align: center;
+}
+#rotate .tab { width: 60px; height: 92px; border: 6px solid var(--wood-dark); border-radius: 12px; background: var(--cream); animation: turn 2.2s ease-in-out infinite; }
+@keyframes turn { 0%, 25% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+@media (orientation: portrait) and (hover: none) and (pointer: coarse) {
+	#rotate { display: flex; }
+}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="canvas" tabindex="0">Your browser does not support the canvas tag.</canvas></div>
+
+<div id="loader">
+	<div id="artwrap" aria-hidden="true"><img id="art" alt=""><div id="parade"></div></div>
+	<div class="island" aria-hidden="true"><div class="sun"></div><div class="sand"></div><div class="grass"></div><div class="trunk"></div><div class="leaves"></div></div>
+	<h1>جزيرة العائلة</h1>
+	<div class="waves" aria-hidden="true"></div>
+	<div class="bottom" style="display:contents">
+	<div id="bar"><i></i></div>
+	<p id="status">نجهّز الجزيرة…</p>
+	<button id="start" type="button">ابدأ اللعب</button>
+	<div id="notice"></div>
+	</div>
+	<p id="build"></p>
+</div>
+<div id="updating">نسخة جديدة من الجزيرة… لحظة</div>
+<script>
+/* G-19 loading art + parade, G-01 build stamp. Runs before the engine script so the picture shows at once. */
+const FI_BUILD = {"time": 1792450042, "commit": "43db092", "build": "f7d5b0cb5fbb"};
+(function () {
+	const loader = document.getElementById('loader');
+	const art = document.getElementById('art');
+	const parade = document.getElementById('parade');
+	let iw = 0, ih = 0, scale = 1;
+	/* Whole device pixels per art pixel: the cover scale rounded DOWN when that still fills at least 90 % of the
+	   screen (the gap shows the picture's own sky / sand colour), else rounded up (a little is cropped). */
+	function fitArt() {
+		if (!iw) return;
+		const dpr = window.devicePixelRatio || 1;
+		const W = window.innerWidth * dpr, H = window.innerHeight * dpr;
+		const c = Math.max(W / iw, H / ih);
+		let s = Math.floor(c);
+		if (s < 1 || s * Math.min(iw / W, ih / H) < 0.9) s = Math.ceil(c);
+		scale = s;
+		art.style.width = (iw * s / dpr) + 'px';
+		art.style.height = (ih * s / dpr) + 'px';
+		art.style.left = (Math.round((W - iw * s) / 2) / dpr) + 'px';
+		art.style.top = (Math.round((H - ih * s) / 2) / dpr) + 'px';
+		// feet on the beach: 93 % down the hi-res picture (its bottom sixth is an empty sand strip), never below the screen
+		const feet = Math.min((H - ih * s) / 2 + ih * s * (iw >= 960 ? 0.93 : 0.97), H - 8 * dpr);
+		parade.style.top = (Math.round(feet) / dpr) + 'px';
+		buildParade(s * (iw >= 960 ? 2 : 1) / dpr);   // one game pixel = 2 art pixels of the 960-wide picture
+	}
+	/* sheet: url, cell px, row, frames, flip (sheets whose side row faces the wrong way) */
+	const TROOP = [
+		{ src: 'icons/walk_girl.png', cell: 64, row: 5, n: 4, fps: 6, flip: false, gap: 0 },
+		{ src: 'icons/walk_boy.png', cell: 64, row: 5, n: 4, fps: 6, flip: false, gap: 22 },
+		{ src: 'icons/walk_dog.png', cell: 32, row: 1, n: 3, from: 1, fps: 7, flip: false, gap: 26, lift: 2 },
+		{ src: 'icons/walk_chicken.png', cell: 16, row: 1, n: 3, from: 1, fps: 7, flip: false, gap: 40, lift: 1 },
+		{ src: 'icons/walk_chick.png', cell: 16, row: 1, n: 3, from: 1, fps: 8, flip: false, gap: 12, lift: 1 },
+	];
+	let builtFor = 0;
+	function buildParade(px) {
+		if (px === builtFor) return;
+		builtFor = px;
+		parade.innerHTML = '';
+		const troop = document.createElement('div');
+		troop.className = 'troop';
+		let x = 0;
+		const css = [];
+		TROOP.forEach(function (t, i) {
+			x += t.gap * px;
+			const d = document.createElement('div');
+			const w = t.cell * px, from = (t.from || 0) * w;
+			d.className = 'walker' + (t.flip ? ' flip' : '');
+			d.style.width = w + 'px';
+			d.style.height = t.cell * px + 'px';
+			d.style.left = x + 'px';
+			d.style.bottom = (-(t.cell === 64 ? 8 : t.lift || 0) * px) + 'px';   // 64-cells: feet at y=56
+			d.style.backgroundImage = 'url(' + t.src + ')';
+			d.style.setProperty('--n', t.n);
+			d.style.setProperty('--steps', 'fiw' + i + ' ' + (t.n / t.fps) + 's');
+			const img = new Image();
+			img.onload = function () {
+				d.style.backgroundSize = (img.width * px) + 'px ' + (img.height * px) + 'px';
+			};
+			img.src = t.src;
+			const y = -t.row * t.cell * px;
+			css.push('@keyframes fiw' + i + ' { from { background-position: ' + (-from) + 'px ' + y + 'px; } to { background-position: ' + (-from - t.n * w) + 'px ' + y + 'px; } }');
+			troop.appendChild(d);
+			x += w;
+		});
+		troop.style.width = x + 'px';
+		let st = document.getElementById('fiw-style');
+		if (!st) { st = document.createElement('style'); st.id = 'fiw-style'; document.head.appendChild(st); }
+		st.textContent = css.join('\n');
+		parade.appendChild(troop);
+	}
+	function edgeColours(img) {
+		try {
+			const c = document.createElement('canvas'); c.width = 1; c.height = img.naturalHeight;
+			const g = c.getContext('2d'); g.drawImage(img, 0, 0, 1, img.naturalHeight);
+			const px = function (y) { const d = g.getImageData(0, y, 1, 1).data; return 'rgb(' + d[0] + ',' + d[1] + ',' + d[2] + ')'; };
+			loader.style.setProperty('--art-top', px(1));
+			loader.style.setProperty('--art-bottom', px(img.naturalHeight - 2));
+		} catch (e) { /* tainted / no canvas: keep the defaults */ }
+	}
+	function show(src, fallback) {
+		art.onload = function () {
+			iw = art.naturalWidth; ih = art.naturalHeight;
+			edgeColours(art);
+			loader.classList.add('art');
+			loader.querySelector('.bottom').style.display = '';
+			fitArt();
+		};
+		art.onerror = function () { if (fallback) show(fallback, null); };
+		art.src = src;
+	}
+	show('icons/loading_hd.png', 'icons/loading.png');
+	window.addEventListener('resize', fitArt);
+	/* the start button's wooden frame: 3 device pixels per art pixel of the 6 px corner, like the in-game buttons */
+	function fitButton() { document.documentElement.style.setProperty('--bw', (6 * Math.max(2, Math.round(3 * (window.devicePixelRatio || 1))) / (window.devicePixelRatio || 1)) + 'px'); }
+	fitButton();
+	window.addEventListener('resize', fitButton);
+	/* G-01: "نسخة ١٠ أكتوبر، ٣:٤٠ م" — the same stamp Settings shows inside the game */
+	try {
+		const b = document.getElementById('build');
+		if (FI_BUILD && FI_BUILD.time) {
+			const d = new Date(FI_BUILD.time * 1000);
+			b.textContent = 'نسخة ' + d.toLocaleString('ar', { day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit', hour12: true });
+			b.title = FI_BUILD.build || '';
+		}
+	} catch (e) { /* no stamp in a dev export */ }
+}());
+</script>
+
+<div id="rotate"><div class="tab" aria-hidden="true"></div><div>أدِر الجهاز بالعرض لتلعب</div></div>
+
+<noscript>هذه اللعبة تحتاج JavaScript.</noscript>
+
+<script src="index.js"></script>
+<script>
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":0,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":7919264,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
+const GODOT_THREADS_ENABLED = false;
+
+/* ---------------------------------------------------------------------------------------------
+ * window.fiWeb — small helpers the game calls through JavaScriptBridge
+ * (scripts/systems/web/web_system.gd). Keep names in sync with that file.
+ * ------------------------------------------------------------------------------------------- */
+const fiWeb = window.fiWeb = {
+	onHide: null,        // set by the game: called synchronously when the page is hidden / closed
+	persisted: null,     // result of navigator.storage.persist() (set by the game)
+	engine: null,
+
+	/** Runs ONE engine frame right now, even while the page is hidden. Godot syncs user:// to IndexedDB
+	 *  at the start of its next frame, but browsers stop requestAnimationFrame for hidden pages — without
+	 *  this, a save made on hide would only reach IndexedDB when the child comes back (or never, if the
+	 *  tablet kills the backgrounded app). We run the engine's already-scheduled frame callback ourselves
+	 *  (see the requestAnimationFrame wrapper below); the browser's own call of it later becomes a no-op.
+	 *  (Do NOT use Module.pauseMainLoop/resumeMainLoop for this: the stale frame then drops emscripten's
+	 *  keep-alive count and the engine exits.) */
+	kickFrame() {
+		const e = fiWeb._pendingFrame;
+		if (!e || e.done) return false;
+		e.done = true;
+		e.f(performance.now());
+		return true;
+	},
+	_pendingFrame: null,
+
+	/** Save a text file: share sheet on iPad/iPhone ("Save to Files"), normal download elsewhere. */
+	saveText(name, text) {
+		const blob = new Blob([text], { type: 'application/json' });
+		try {
+			const file = new File([blob], name, { type: 'application/json' });
+			const ios = /iP(ad|hone|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+			if (ios && navigator.canShare && navigator.canShare({ files: [file] })) {
+				navigator.share({ files: [file] }).catch(function () { fiWeb._download(blob, name); });
+				return;
+			}
+		} catch (e) { /* fall through */ }
+		fiWeb._download(blob, name);
+	},
+	_download(blob, name) {
+		const a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = name;
+		document.body.appendChild(a);
+		a.click();
+		setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+	},
+
+	/** Opens the file picker; `cb(text)` gets the chosen file's text after `confirmText` is accepted. */
+	pickText(cb, confirmText) {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = '.json,application/json,text/plain';
+		input.style.display = 'none';
+		input.addEventListener('change', function () {
+			const f = input.files && input.files[0];
+			input.remove();
+			if (!f) return;
+			f.text().then(function (t) {
+				if (!confirmText || window.confirm(confirmText)) cb(t);
+			});
+		});
+		document.body.appendChild(input);
+		input.click();
+	},
+
+	reload() { location.reload(); },
+
+	/** "أسرع" in the settings: render at 1 device pixel per CSS pixel (4× fewer pixels on a retina iPad). */
+	isLowQuality() { try { return localStorage.getItem('fi.low_quality') === '1'; } catch (e) { return false; } },
+	setLowQuality(on) {
+		try { localStorage.setItem('fi.low_quality', on ? '1' : '0'); } catch (e) { /* private mode */ }
+		if (fiWeb.fit) fiWeb.fit();
+	},
+	fit: null,
+	maxCanvasPixels: 3.2e6,   // ≈ a retina iPad; phones and big screens render at most this many pixels
+	/** Canvas pixels per CSS pixel (touch sizes use it: a 64-point button = 64 × this). */
+	pxPerPoint() {
+		const c = document.getElementById('canvas');
+		const w = c && c.getBoundingClientRect().width;
+		return w ? c.width / w : (window.devicePixelRatio || 1);
+	},
+};
+
+/* Keep a handle on the engine's next frame callback (for fiWeb.kickFrame). */
+(function () {
+	const raf = window.requestAnimationFrame.bind(window);
+	window.requestAnimationFrame = function (f) {
+		const e = { f: f, done: false };
+		fiWeb._pendingFrame = e;
+		return raf(function (t) { if (!e.done) { e.done = true; f(t); } });
+	};
+}());
+
+(function () {
+	const loader = document.getElementById('loader');
+	const bar = document.querySelector('#bar i');
+	const status = document.getElementById('status');
+	const startBtn = document.getElementById('start');
+	const notice = document.getElementById('notice');
+	const stage = document.getElementById('stage');
+	const canvas = document.getElementById('canvas');
+
+	function fail(msg) {
+		console.error(msg);
+		notice.textContent = 'تعذّر تشغيل اللعبة على هذا المتصفّح.\n' + (msg && msg.message ? msg.message : String(msg));
+		loader.classList.add('error');
+	}
+
+	/* Canvas = safe-area rectangle × device pixel ratio (capped). Godot follows canvas.width/height
+	 * because the preset uses canvas resize policy "None". */
+	function fitCanvas() {
+		const r = stage.getBoundingClientRect();
+		const area = Math.max(1, r.width * r.height);
+		const ratio = fiWeb.isLowQuality() ? 1 : Math.max(1, Math.min(window.devicePixelRatio || 1, Math.sqrt(fiWeb.maxCanvasPixels / area)));
+		let w = Math.max(1, Math.floor(r.width * ratio)), h = Math.max(1, Math.floor(r.height * ratio));
+		// The game scales its 480×270 base by a whole number (crisp pixels). Trim the canvas to a multiple
+		// of that number so the engine never draws black bars; the few spare pixels show the sea colour.
+		const s = Math.max(1, Math.floor(Math.min(w / 480, h / 270)));
+		w -= w % s; h -= h % s;
+		canvas.style.width = (w / ratio) + 'px';
+		canvas.style.height = (h / ratio) + 'px';
+		canvas.style.left = ((r.width - w / ratio) / 2) + 'px';
+		canvas.style.top = ((r.height - h / ratio) / 2) + 'px';
+		if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+	}
+	fiWeb.fit = fitCanvas;
+	fitCanvas();
+	window.addEventListener('resize', fitCanvas);
+	window.addEventListener('orientationchange', function () { setTimeout(fitCanvas, 300); });
+	if (window.visualViewport) window.visualViewport.addEventListener('resize', fitCanvas);
+
+	/* Stop the browser from zooming / scrolling / showing callouts (iOS ignores user-scalable=no). */
+	['gesturestart', 'gesturechange', 'gestureend', 'dblclick', 'contextmenu'].forEach(function (ev) {
+		document.addEventListener(ev, function (e) { e.preventDefault(); }, { passive: false });
+	});
+	document.addEventListener('touchmove', function (e) { if (e.target === canvas || e.touches.length > 1) e.preventDefault(); }, { passive: false });
+	let lastTouchEnd = 0;
+	document.addEventListener('touchend', function (e) {
+		const now = Date.now();
+		if (now - lastTouchEnd < 350 && e.target !== canvas) e.preventDefault();   // double-tap zoom on the overlays
+		lastTouchEnd = now;
+	}, { passive: false });
+
+	/* Save before the page goes away (tablet home button, app switch, tab close). */
+	function onHidden() {
+		if (typeof fiWeb.onHide === 'function') {
+			try { fiWeb.onHide(); } catch (e) { console.error(e); }
+			fiWeb.kickFrame();
+		}
+	}
+	document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') onHidden(); });
+	window.addEventListener('pagehide', onHidden);
+
+	/* Service worker: offline play + IMMEDIATE updates (G-01). A new build's worker skips waiting and takes control;
+	 * 'controllerchange' then reloads this page ONCE (saving first if the game is running). At launch we also ask
+	 * the server for a newer worker before loading the engine, so a stale build is never started. */
+	let started = false;
+	let reloading = false;
+	function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+	function reloadForUpdate() {
+		if (reloading) return;
+		reloading = true;
+		console.log('[fi] new build took control -> reload');
+		document.getElementById('updating').classList.add('on');
+		if (started) {
+			onHidden();                                       // save the island first (same path as closing the tab)
+			setTimeout(function () { location.reload(); }, 900);
+		} else {
+			location.reload();
+		}
+	}
+	fiWeb.build = (typeof FI_BUILD === 'object' && FI_BUILD) || {};
+	async function setupServiceWorker() {
+		if (!GODOT_CONFIG.serviceWorker || !('serviceWorker' in navigator) || !window.isSecureContext) return 'none';
+		const sw = navigator.serviceWorker;
+		let hadController = !!sw.controller;
+		sw.addEventListener('controllerchange', function () {
+			if (!hadController) { hadController = true; return; }   // first install claiming the page: nothing to swap
+			reloadForUpdate();
+		});
+		let reg;
+		try { reg = await sw.register(GODOT_CONFIG.serviceWorker, { updateViaCache: 'none' }); } catch (e) { console.warn('SW register failed', e); return 'none'; }
+		fiWeb.swRegistration = reg;
+		if (reg.waiting && sw.controller) reg.waiting.postMessage('update');   // a worker of an older build left waiting
+		if (sw.controller) {
+			// Is there a newer build on the server? (resolves once the check is done; a new worker is then installing)
+			try { await Promise.race([reg.update(), sleep(5000)]); } catch (e) { /* offline: play the cached build */ }
+			if (reg.installing || reg.waiting) {
+				status.textContent = 'نُحدّث الجزيرة…';
+				await sleep(30000);   // controllerchange reloads the page long before this
+				return reloading ? 'reload' : 'ok';
+			}
+		} else {
+			// First visit: wait (briefly) until the worker controls this page, so the big files we are
+			// about to download go through it and are kept for offline play.
+			await Promise.race([new Promise(function (r) { sw.addEventListener('controllerchange', r, { once: true }); }), sleep(5000)]);
+		}
+		// While playing: look for a new build when the page comes back and every 10 minutes.
+		document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') reg.update().catch(function () {}); });
+		setInterval(function () { reg.update().catch(function () {}); }, 10 * 60 * 1000);
+		return 'ok';
+	}
+
+	const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+	if (missing.length !== 0) {
+		fail(missing.join('\n'));
+		return;
+	}
+
+	const exe = GODOT_CONFIG.executable;
+	const pack = GODOT_CONFIG.mainPack || (exe + '.pck');
+	const engine = new Engine(Object.assign({}, GODOT_CONFIG, {
+		onProgress: function (current, total) {
+			if (loader.classList.contains('ready')) return;
+			if (current > 0 && total > 0) {
+				const p = Math.min(100, Math.round(current * 100 / total));
+				bar.style.width = p + '%';
+				status.textContent = 'نجهّز الجزيرة… ' + p.toLocaleString('ar') + '٪';
+			}
+		},
+	}));
+	fiWeb.engine = engine;
+
+	setupServiceWorker().then(function (r) {
+		if (r === 'reload') return;
+		return Promise.all([engine.init(exe), engine.preloadFile(pack, pack)]).then(function () {
+			bar.style.width = '100%';
+			status.textContent = 'الجزيرة جاهزة!';
+			loader.classList.add('ready');
+			startBtn.focus();
+		});
+	}).catch(fail);
+
+	startBtn.addEventListener('click', function () {
+		if (started) return;
+		started = true;
+		status.textContent = '';
+		// Starting inside the tap lets the browser create Godot's AudioContext unlocked.
+		engine.start({ args: ['--main-pack', pack] }).then(function () {
+			fitCanvas();
+			canvas.focus();
+			loader.classList.add('gone');
+			setTimeout(function () { loader.remove(); }, 600);
+			if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function () {});
+		}, fail);
+	});
+}());
+</script>
+</body>
+</html>
+
