@@ -15,6 +15,46 @@
 <link rel="manifest" href="index.manifest.json">
 <link rel="icon" type="image/png" href="icons/icon_32.png">
 <link rel="apple-touch-icon" href="icons/icon_180.png">
+<script>
+/* Hotfix v1.0.1: keeps the last 30 console lines + errors in memory (hidden diagnostics view: tap the build stamp 5 times). */
+(function () {
+	const t0 = performance.now(), MAX = 30, all = [], errs = [];
+	const D = window.fiDiag = { all: all, errs: errs, marks: {}, phase: 'loading', fatal: null, pending: [] };
+	function fmt(a) {
+		try {
+			if (a instanceof Error) return a.name + ': ' + a.message + (a.stack ? ' | ' + String(a.stack).split('\n').slice(0, 3).join(' / ') : '');
+			if (a && typeof a === 'object') return JSON.stringify(a);
+			return String(a);
+		} catch (e) { return '?'; }
+	}
+	function stamp() { return ((performance.now() - t0) / 1000).toFixed(1) + 's '; }
+	function push(arr, level, text) {
+		text = String(text); if (text.length > 400) text = text.slice(0, 400) + '…';
+		arr.push(stamp() + level + ' ' + text); if (arr.length > MAX) arr.shift();
+	}
+	D.mark = function (name) { D.marks[name] = Math.round(performance.now() - t0); };
+	D.log = function (level, text) { push(all, level, text); if (level === 'error' || level === 'warn') push(errs, level, text); };
+	['log', 'info', 'warn', 'error', 'debug'].forEach(function (l) {
+		const orig = console[l];
+		console[l] = function () { try { D.log(l, Array.prototype.map.call(arguments, fmt).join(' ')); } catch (e) {} return orig.apply(console, arguments); };
+	});
+	function fatal(kind, detail) { if (D.fatal) D.fatal(kind, detail); else D.pending.push([kind, detail]); }
+	window.addEventListener('error', function (e) {
+		if (e.target && e.target !== window && (e.target.src || e.target.href)) { D.log('error', 'load failed: ' + (e.target.src || e.target.href)); return; }
+		const m = (e.message || '') + (e.filename ? ' @' + String(e.filename).split('/').pop() + ':' + e.lineno : '');
+		D.log('error', 'uncaught: ' + m);
+		if (D.phase === 'starting' || /RuntimeError|abort|out of memory|memory access|unreachable|WebAssembly/i.test(m)) fatal('error', m);
+	}, true);
+	window.addEventListener('unhandledrejection', function (e) {
+		const m = fmt(e.reason);
+		D.log('error', 'unhandledrejection: ' + m);
+		if (D.phase === 'starting' || /RuntimeError|abort|out of memory|memory access|unreachable|WebAssembly/i.test(m)) fatal('error', m);
+	});
+	window.addEventListener('webglcontextlost', function (e) { D.log('error', 'WebGL context lost'); fatal('gl', 'webglcontextlost'); }, true);
+	window.addEventListener('webglcontextcreationerror', function (e) { D.log('error', 'WebGL context creation failed: ' + (e.statusMessage || '')); fatal('gl', 'webglcontextcreationerror'); }, true);
+	window.addEventListener('webglcontextrestored', function () { D.log('warn', 'WebGL context restored'); if (D.restored) D.restored(); }, true);
+}());
+</script>
 <style>
 :root {
 	--sea: #9bd4c3;
@@ -147,6 +187,35 @@ body { position: fixed; inset: 0; }
 @media (orientation: portrait) and (hover: none) and (pointer: coarse) {
 	#rotate { display: flex; }
 }
+
+/* ---------- hotfix: tap feedback, problem card, diagnostics ---------- */
+#loader.starting #bar, #loader.starting .waves { display: none; }
+#loader.starting #start { display: block; animation: none; pointer-events: none; border-image-source: url(icons/ui_button_pressed.png); filter: saturate(.75) brightness(.97) drop-shadow(0 4px 8px rgba(19, 40, 44, .25)); transform: translateY(3px); }
+#spinner { display: none; gap: 14px; height: 26px; align-items: center; justify-content: center; }
+#loader.starting #spinner { display: flex; }
+#spinner i { display: block; width: 16px; height: 16px; border-radius: 50%; background: #f2b844; border: 3px solid var(--wood-dark); box-sizing: border-box; animation: hop 1.1s ease-in-out infinite; }
+#spinner i:nth-child(2) { animation-delay: .18s; }
+#spinner i:nth-child(3) { animation-delay: .36s; }
+@keyframes hop { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-12px); } }
+#problem { display: none; position: fixed; inset: 0; z-index: 40; align-items: center; justify-content: center; flex-direction: column; gap: 20px; padding: 20px;
+	background: rgba(155, 212, 195, .96); color: var(--ink); text-align: center; box-sizing: border-box; }
+#problem.on { display: flex; }
+#problem h2 { margin: 0; font-size: clamp(24px, 5vmin, 38px); font-weight: 800; color: var(--wood-dark); }
+#problem p { margin: 0; max-width: 34em; font-size: clamp(18px, 3.4vmin, 26px); line-height: 1.55; font-weight: 700; }
+#problem .row { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
+#problem button { font: inherit; font-size: clamp(22px, 4.4vmin, 34px); font-weight: 800; min-width: 7em; min-height: 64px; padding: 10px 22px; border-radius: 18px;
+	border: 4px solid var(--wood-dark); color: #fdeccf; background: var(--wood); box-shadow: 0 5px 0 var(--wood-dark); cursor: pointer; touch-action: manipulation; }
+#problem button.alt { background: var(--leaf); }
+#problem button:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--wood-dark); }
+#pbuild { margin: 0; font-size: 13px; color: rgba(19, 40, 44, .6); padding: 6px 14px; }
+#diag { display: none; position: fixed; inset: 0; z-index: 50; background: #17252a; color: #d7efe6; box-sizing: border-box; padding: max(12px, env(safe-area-inset-top)) 14px 14px;
+	font: 13px/1.45 ui-monospace, Menlo, Consolas, monospace; direction: ltr; text-align: left; overflow: auto; touch-action: pan-y; -webkit-user-select: text; user-select: text; }
+#diag.on { display: block; }
+#diag pre { margin: 0 0 12px; white-space: pre-wrap; word-break: break-all; }
+#diag button { font: 700 18px/1 sans-serif; min-height: 48px; padding: 8px 20px; margin: 0 10px 12px 0; border-radius: 10px; border: 0; background: #f2b844; color: #3a2a1c; }
+#diag h3 { margin: 8px 0 4px; color: #f2b844; font-size: 14px; }
+#updating.note { top: auto; bottom: 14px; font-size: 16px; pointer-events: none; }
+#build { pointer-events: auto; padding: 10px 18px; margin: -10px -18px; }
 </style>
 </head>
 <body>
@@ -161,14 +230,19 @@ body { position: fixed; inset: 0; }
 	<div id="bar"><i></i></div>
 	<p id="status">نجهّز الجزيرة…</p>
 	<button id="start" type="button">ابدأ اللعب</button>
+		<div id="spinner" aria-hidden="true"><i></i><i></i><i></i></div>
 	<div id="notice"></div>
 	</div>
 	<p id="build"></p>
 </div>
 <div id="updating">نسخة جديدة من الجزيرة… لحظة</div>
+<div id="problem" role="alert"><h2 id="ptitle"></h2><p id="ptext"></p>
+	<div class="row"><button id="pretry" type="button">حاول مرة أخرى</button><button id="plite" type="button" class="alt">تشغيل خفيف</button></div>
+	<p id="pbuild"></p></div>
+<div id="diag"><button id="diagclose" type="button">إغلاق · Close</button><button id="diagcopy" type="button">نسخ · Copy</button><div id="diagbody"></div></div>
 <script>
 /* G-19 loading art + parade, G-01 build stamp. Runs before the engine script so the picture shows at once. */
-const FI_BUILD = {"time": 1792472681, "commit": "dc97807", "build": "b994233b6200"};
+const FI_BUILD = {"time": 1792487442, "commit": "c7974ae", "build": "0ff6add7285c"};
 (function () {
 	const loader = document.getElementById('loader');
 	const art = document.getElementById('art');
@@ -282,7 +356,7 @@ const FI_BUILD = {"time": 1792472681, "commit": "dc97807", "build": "b994233b620
 
 <script src="index.js"></script>
 <script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":0,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":7845540,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":0,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":7848212,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
 const GODOT_THREADS_ENABLED = false;
 
 /* ---------------------------------------------------------------------------------------------
@@ -353,13 +427,41 @@ const fiWeb = window.fiWeb = {
 	reload() { location.reload(); },
 
 	/** "أسرع" in the settings: render at 1 device pixel per CSS pixel (4× fewer pixels on a retina iPad). */
-	isLowQuality() { try { return localStorage.getItem('fi.low_quality') === '1'; } catch (e) { return false; } },
+	isLowQuality() { if (fiWeb.auto.trial === 3) return true; try { return localStorage.getItem('fi.low_quality') === '1'; } catch (e) { return false; } },
 	setLowQuality(on) {
-		try { localStorage.setItem('fi.low_quality', on ? '1' : '0'); } catch (e) { /* private mode */ }
+		try {
+			localStorage.setItem('fi.low_quality', on ? '1' : '0');
+			localStorage.setItem('fi.auto_lock', '1');                       // the player chose: the automatic steps stay out of it
+			if (!on) localStorage.setItem('fi.auto_level', '0');             // «عادي» = the full pixel budget
+		} catch (e) { /* private mode */ }
+		if (!on) fiWeb.setLite(false);   // choosing «عادي» in the settings also leaves the light mode
+		if (fiWeb.fit) fiWeb.fit();
+	},
+	/** Automatic quality (see autoQuality() below): level 0 full pixel budget · 1 smaller budget · 2 + low effects
+	 *  (the game's «مؤثرات قليلة» setting) · 3 + «أسرع» (1 device pixel per CSS pixel). Phones/tablets start at 1. */
+	AUTO_CAPS: [3.2e6, 1.8e6, 1.8e6, 1.4e6],
+	_ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { /* private mode */ } return null; },
+	autoLevel() { if (fiWeb.auto.trial !== null && fiWeb.auto.trial !== undefined) return fiWeb.auto.trial; const v = fiWeb._ls('fi.auto_level'); return v === null ? (fiWeb.isMobile ? 1 : 0) : Math.max(0, Math.min(3, parseInt(v, 10) || 0)); },
+	autoLocked() { return fiWeb._ls('fi.auto_lock') === '1'; },
+	/** Polled by the game once a second: true until it has switched «مؤثرات قليلة» on for a weak device (once; the player can switch it off again). */
+	wantLowFx() { return (fiWeb.isLite() || fiWeb.autoLevel() >= 2) && fiWeb._ls('fi.fx_applied') !== '1'; },
+	fxApplied() { fiWeb._ls('fi.fx_applied', '1'); },
+	wantFxUndo() { return fiWeb._ls('fi.fx_undo') === '1'; },
+	fxUndone() { try { localStorage.removeItem('fi.fx_undo'); localStorage.removeItem('fi.fx_applied'); } catch (e) { /* private mode */ } },
+	auto: { history: [], trial: null },
+	/** «تشغيل خفيف» (offered when the start is slow / fails): quality «أسرع» + a small pixel budget. Stored in
+	 *  localStorage['fi.lite']; `?lite=1` / `?lite=0` in the address does the same (for us, when testing). */
+	isLite() { try { return localStorage.getItem('fi.lite') === '1'; } catch (e) { return false; } },
+	setLite(on) {
+		try {
+			localStorage.setItem('fi.lite', on ? '1' : '0');
+			if (on) { localStorage.setItem('fi.low_quality', '1'); localStorage.setItem('fi.auto_lock', '1'); }
+		} catch (e) { /* private mode */ }
 		if (fiWeb.fit) fiWeb.fit();
 	},
 	fit: null,
-	maxCanvasPixels: 3.2e6,   // ≈ a retina iPad; phones and big screens render at most this many pixels
+	isMobile: /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform)),
+	liteCanvasPixels: 1.0e6,  // light mode: about 1280×800 at 1 device pixel per CSS pixel, never more
 	/** Canvas pixels per CSS pixel (touch sizes use it: a 64-point button = 64 × this). */
 	pxPerPoint() {
 		const c = document.getElementById('canvas');
@@ -368,9 +470,15 @@ const fiWeb = window.fiWeb = {
 	},
 };
 
+try {
+	const q = new URLSearchParams(location.search).get('lite');
+	if (q === '1' || q === '0') fiWeb.setLite(q === '1');
+} catch (e) { /* no URLSearchParams */ }
+
 /* Keep a handle on the engine's next frame callback (for fiWeb.kickFrame). */
 (function () {
 	const raf = window.requestAnimationFrame.bind(window);
+	fiWeb._rawRaf = raf;   // for the fps measurement (must not touch _pendingFrame)
 	window.requestAnimationFrame = function (f) {
 		const e = { f: f, done: false };
 		fiWeb._pendingFrame = e;
@@ -387,18 +495,51 @@ const fiWeb = window.fiWeb = {
 	const stage = document.getElementById('stage');
 	const canvas = document.getElementById('canvas');
 
-	function fail(msg) {
-		console.error(msg);
-		notice.textContent = 'تعذّر تشغيل اللعبة على هذا المتصفّح.\n' + (msg && msg.message ? msg.message : String(msg));
-		loader.classList.add('error');
+	const D = window.fiDiag;
+	const problemEl = document.getElementById('problem');
+	let problemKind = '';
+	const PROBLEMS = {
+		slow: ['الجزيرة تتأخر قليلًا', 'جهازك يحتاج وقتًا أطول من المعتاد. يمكنك الانتظار قليلًا، أو تجربة إحدى الطريقتين:'],
+		error: ['حدثت مشكلة صغيرة', 'لم تُفتح الجزيرة كما ينبغي، وليس هذا بسببك. جرّب مرة أخرى، أو شغّلها بالوضع الخفيف.'],
+		gl: ['توقّف رسم الجزيرة', 'أوقف الجهاز الرسومات للحظة. جرّب مرة أخرى، أو شغّلها بالوضع الخفيف.'],
+	};
+	/* A calm card with two big buttons: never leave the child at a dead screen. */
+	function problem(kind) {
+		if (problemKind && problemKind !== 'slow' && kind === 'slow') return;   // do not hide a real error behind "slow"
+		problemKind = kind;
+		const t = PROBLEMS[kind] || PROBLEMS.error;
+		document.getElementById('ptitle').textContent = t[0];
+		document.getElementById('ptext').textContent = t[1];
+		problemEl.classList.add('on');
+		if (D) D.mark('problem_' + kind);
 	}
+	function clearProblem(onlyKind) {
+		if (onlyKind && problemKind !== onlyKind) return;
+		problemKind = '';
+		problemEl.classList.remove('on');
+	}
+	function fail(msg) {
+		const m = msg && msg.message ? msg.message : String(msg);
+		console.error('fail: ' + m);
+		problem('error');
+	}
+	if (D) {
+		D.fatal = function (kind, detail) { problem(kind); };
+		D.restored = function () { clearProblem('gl'); };
+		D.pending.forEach(function (a) { problem(a[0]); });
+	}
+	document.getElementById('pretry').addEventListener('click', function () { location.reload(); });
+	document.getElementById('plite').addEventListener('click', function () { fiWeb.setLite(true); location.reload(); });
 
 	/* Canvas = safe-area rectangle × device pixel ratio (capped). Godot follows canvas.width/height
 	 * because the preset uses canvas resize policy "None". */
 	function fitCanvas() {
 		const r = stage.getBoundingClientRect();
 		const area = Math.max(1, r.width * r.height);
-		const ratio = fiWeb.isLowQuality() ? 1 : Math.max(1, Math.min(window.devicePixelRatio || 1, Math.sqrt(fiWeb.maxCanvasPixels / area)));
+		const cap = fiWeb.AUTO_CAPS[fiWeb.autoLevel()];   // 3.2 M ≈ a retina iPad; a weak tablet gets less (autoQuality)
+		const ratio = fiWeb.isLite() ? Math.max(0.5, Math.min(1, Math.sqrt(fiWeb.liteCanvasPixels / area)))
+			: fiWeb.isLowQuality() ? (fiWeb.isMobile ? Math.max(0.5, Math.min(1, Math.sqrt(fiWeb.AUTO_CAPS[3] / area))) : 1)
+			: Math.max(1, Math.min(window.devicePixelRatio || 1, Math.sqrt(cap / area)));
 		let w = Math.max(1, Math.floor(r.width * ratio)), h = Math.max(1, Math.floor(r.height * ratio));
 		// The game scales its 480×270 base by a whole number (crisp pixels). Trim the canvas to a multiple
 		// of that number so the engine never draws black bars; the few spare pixels show the sea colour.
@@ -424,7 +565,7 @@ const fiWeb = window.fiWeb = {
 	let lastTouchEnd = 0;
 	document.addEventListener('touchend', function (e) {
 		const now = Date.now();
-		if (now - lastTouchEnd < 350 && e.target !== canvas) e.preventDefault();   // double-tap zoom on the overlays
+		if (now - lastTouchEnd < 350 && e.target !== canvas && !(e.target.closest && e.target.closest('button'))) e.preventDefault();   // (buttons: touch-action manipulation already stops the zoom, and a swallowed tap would swallow its click)   // double-tap zoom on the overlays
 		lastTouchEnd = now;
 	}, { passive: false });
 
@@ -457,12 +598,26 @@ const fiWeb = window.fiWeb = {
 		}
 	}
 	fiWeb.build = (typeof FI_BUILD === 'object' && FI_BUILD) || {};
+	/* The page never waits more than UPDATE_WAIT ms for a new build: after that the cached build starts and the new one
+	 * applies at the next launch (a small «تحديث جاهز» note). `settled` = the loading screen has moved on. */
+	const UPDATE_WAIT = 8000;
+	let settled = false;
+	function showUpdateReady() {
+		const u = document.getElementById('updating');
+		u.textContent = 'تحديث جاهز — يبدأ عند فتح اللعبة المرة القادمة';
+		u.classList.add('on', 'note');
+		setTimeout(function () { u.classList.remove('on'); }, 7000);
+	}
 	async function setupServiceWorker() {
 		if (!GODOT_CONFIG.serviceWorker || !('serviceWorker' in navigator) || !window.isSecureContext) return 'none';
 		const sw = navigator.serviceWorker;
 		let hadController = !!sw.controller;
+		let swapped;
+		const swapWait = new Promise(function (r) { swapped = r; });
 		sw.addEventListener('controllerchange', function () {
 			if (!hadController) { hadController = true; return; }   // first install claiming the page: nothing to swap
+			if (settled || started) { console.log('[fi] new build ready -> applies next launch'); showUpdateReady(); return; }
+			swapped(true);
 			reloadForUpdate();
 		});
 		let reg;
@@ -474,8 +629,11 @@ const fiWeb = window.fiWeb = {
 			try { await Promise.race([reg.update(), sleep(5000)]); } catch (e) { /* offline: play the cached build */ }
 			if (reg.installing || reg.waiting) {
 				status.textContent = 'نُحدّث الجزيرة…';
-				await sleep(30000);   // controllerchange reloads the page long before this
-				return reloading ? 'reload' : 'ok';
+				// controllerchange reloads the page as soon as the new build is ready; if it is slow, play the cached one
+				await Promise.race([swapWait, sleep(UPDATE_WAIT)]);
+				if (reloading) return 'reload';
+				console.log('[fi] update slower than ' + UPDATE_WAIT + ' ms -> starting the cached build');
+				status.textContent = 'نجهّز الجزيرة…';
 			}
 		} else {
 			// First visit: wait (briefly) until the worker controls this page, so the big files we are
@@ -497,6 +655,10 @@ const fiWeb = window.fiWeb = {
 	const exe = GODOT_CONFIG.executable;
 	const pack = GODOT_CONFIG.mainPack || (exe + '.pck');
 	const engine = new Engine(Object.assign({}, GODOT_CONFIG, {
+		onExit: function (code) {
+			console.error('engine exited, code ' + code);
+			problem('error');
+		},
 		onProgress: function (current, total) {
 			if (loader.classList.contains('ready')) return;
 			if (current > 0 && total > 0) {
@@ -508,29 +670,174 @@ const fiWeb = window.fiWeb = {
 	}));
 	fiWeb.engine = engine;
 
+	let loadingSlow = setTimeout(function () {
+		if (!loader.classList.contains('ready') && !reloading) status.textContent = 'التحميل بطيء… تأكّد من اتصال الإنترنت وانتظر قليلًا';
+	}, 45000);
+	if (D) D.mark('shell');
 	setupServiceWorker().then(function (r) {
+		settled = true;
+		if (D) D.mark('sw_' + r);
 		if (r === 'reload') return;
 		return Promise.all([engine.init(exe), engine.preloadFile(pack, pack)]).then(function () {
+			clearTimeout(loadingSlow);
 			bar.style.width = '100%';
 			status.textContent = 'الجزيرة جاهزة!';
 			loader.classList.add('ready');
+			if (D) D.mark('ready');
 			startBtn.focus();
 		});
-	}).catch(fail);
+	}).catch(function (e) { settled = true; clearTimeout(loadingSlow); fail(e); });
 
-	startBtn.addEventListener('click', function () {
+	/* Tap on «ابدأ اللعب»: feedback FIRST (the button turns into «نفتح الجزيرة…» with hopping dots, which run on the
+	 * compositor and keep moving while the engine compiles), then the engine starts a moment later so the browser can paint.
+	 * pointerup AND click both start it (some Android browsers drop the synthetic click); the first one wins. */
+	/* Automatic quality: in the first ~10 s of play measure the real frame rate (median). Below ~45 fps step down one level
+	 * (smaller pixel budget -> low effects -> «أسرع») and measure again; the answer is remembered on this device
+	 * (localStorage fi.auto_level) and nothing is shown. Phones/tablets start one step lower; if that runs at ~60 fps
+	 * the full budget is tried once. A choice made in the settings (or the light mode) switches this off. */
+	function autoQuality() {
+		if (fiWeb.autoLocked() || fiWeb.isLite() || fiWeb._ls('fi.auto_done') === '1') return;
+		const raf = fiWeb._rawRaf || window.requestAnimationFrame.bind(window);
+		const A = fiWeb.auto, first = fiWeb._ls('fi.auto_level') === null;
+		const seen = {};          // level -> median fps: a step that does not help (a CPU-bound device gains nothing from fewer pixels,
+		let level = fiWeb.autoLevel(), tryingUp = false;   // and a smaller canvas even shows MORE of the world) is taken back
+		function trial(n, why) {
+			level = n; A.trial = n;
+			A.history.push(why + ' -> L' + n);
+			console.log('[fi] auto quality ' + why + ' -> level ' + n);
+			fiWeb.fit();
+		}
+		function finish() {
+			let best = null, top = 0;
+			Object.keys(seen).forEach(function (k) { if (seen[k] > top) top = seen[k]; });
+			Object.keys(seen).map(Number).sort().forEach(function (k) { if (best === null && seen[k] >= top * 0.95) best = k; });   // lowest level within 5 % of the best
+			if (best === null) best = level;
+			A.trial = null;
+			fiWeb._ls('fi.auto_level', String(best));
+			if (best >= 3) fiWeb._ls('fi.low_quality', '1');
+			if (best < 2 && fiWeb._ls('fi.fx_applied') === '1') fiWeb._ls('fi.fx_undo', '1');   // the effects trial did not help: switch them back on
+			A.history.push('final L' + best);
+			A.done = true; A.level = best;
+			fiWeb._ls('fi.auto_done', '1');
+			console.log('[fi] auto quality final level ' + best);
+			fiWeb.fit();
+		}
+		function measure(warmMs, windowMs, cb) {
+			let t0 = performance.now(), last = 0; const d = [];
+			(function tick(now) {
+				if (document.hidden) { t0 = performance.now(); last = 0; d.length = 0; return raf(tick); }   // a hidden page is not a slow page
+				if (last && now - t0 > warmMs) d.push(now - last);
+				last = now;
+				if (now - t0 < warmMs + windowMs) return raf(tick);
+				d.sort(function (a, b) { return a - b; });
+				const med = d[d.length >> 1] || 16.7, p95 = d[Math.floor(d.length * 0.95)] || med;
+				cb(1000 / med, 1000 / p95);
+			}(performance.now()));
+		}
+		function round(warm, win) {
+			measure(warm, win, function (fps, fps95) {
+				seen[level] = fps;
+				A.history.push('L' + level + ' median ' + fps.toFixed(1) + ' fps (p95 ' + fps95.toFixed(1) + ')');
+				if (tryingUp) { if (fps < 50) { delete seen[0]; trial(1, 'full budget too slow'); } return finish(); }
+				if (fps < 45 && level < 3) { trial(level + 1, 'slow (' + fps.toFixed(0) + ' fps)'); return round(1500, 5500); }
+				if (first && fiWeb.isMobile && level === 1 && fps >= 57) { tryingUp = true; trial(0, 'smooth (' + fps.toFixed(0) + ' fps), trying the full budget'); return round(1500, 5000); }
+				finish();
+			});
+		}
+		A.trial = level;
+		round(3000, 7000);   // the first seconds hitch (shader compiles); the next 7 s decide
+	}
+	const START_WATCHDOG = 25000;
+	function begin() {
 		if (started) return;
 		started = true;
+		if (D) { D.phase = 'starting'; D.mark('tap'); }
+		startBtn.textContent = 'نفتح الجزيرة…';
+		startBtn.setAttribute('aria-busy', 'true');
+		loader.classList.add('starting');
 		status.textContent = '';
-		// Starting inside the tap lets the browser create Godot's AudioContext unlocked.
-		engine.start({ args: ['--main-pack', pack] }).then(function () {
+		const watchdog = setTimeout(function () { if (!D || D.phase === 'starting') problem('slow'); }, START_WATCHDOG);
+		function done() {
+			if (D) { D.phase = 'running'; D.mark('started'); }
+			clearTimeout(watchdog);
+			clearProblem('slow');
 			fitCanvas();
 			canvas.focus();
+			try { autoQuality(); } catch (e) { console.warn('autoQuality', e); }
 			loader.classList.add('gone');
 			setTimeout(function () { loader.remove(); }, 600);
 			if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function () {});
-		}, fail);
+		}
+		function broke(e) {
+			clearTimeout(watchdog);
+			const m = e && e.message ? e.message : String(e);
+			console.error('engine.start failed: ' + m);
+			problem('error');
+		}
+		setTimeout(function () {
+			try {
+				engine.start({ args: ['--main-pack', pack] }).then(done, broke);
+			} catch (e) { broke(e); }
+		}, 80);
+	}
+	startBtn.addEventListener('pointerup', function (e) {
+		if (e.button > 0) return;
+		const r = startBtn.getBoundingClientRect(), m = 14;   // a finger that slid far off the button is not a tap
+		if (e.clientX < r.left - m || e.clientX > r.right + m || e.clientY < r.top - m || e.clientY > r.bottom + m) return;
+		begin();
 	});
+	startBtn.addEventListener('click', begin);
+
+	/* Hidden diagnostics: tap the build stamp 5 times -> the last console lines + errors, for a screenshot. */
+	function diagText() {
+		const L = [];
+		const add = function (k, v) { L.push(k + ': ' + v); };
+		add('build', JSON.stringify(fiWeb.build));
+		add('ua', navigator.userAgent);
+		add('screen', screen.width + 'x' + screen.height + ' dpr ' + window.devicePixelRatio + ' inner ' + innerWidth + 'x' + innerHeight);
+		add('canvas', canvas.width + 'x' + canvas.height + ' (' + (canvas.width * canvas.height / 1e6).toFixed(2) + ' Mpx)');
+		add('mobile', fiWeb.isMobile + '  lite ' + fiWeb.isLite() + '  low_quality ' + fiWeb.isLowQuality() + '  cap ' + fiWeb.AUTO_CAPS[fiWeb.autoLevel()] + '  autoLevel ' + fiWeb.autoLevel() + ' locked ' + fiWeb.autoLocked() + ' ' + JSON.stringify(fiWeb.auto.history));
+		add('device', 'memory ' + (navigator.deviceMemory || '?') + ' GB, cores ' + (navigator.hardwareConcurrency || '?') + ', touch ' + navigator.maxTouchPoints);
+		add('sw', 'secure ' + window.isSecureContext + ', controller ' + !!(navigator.serviceWorker && navigator.serviceWorker.controller) + ', phase ' + (D && D.phase) + ', problem ' + (problemKind || '-'));
+		try {
+			const c = document.createElement('canvas'), g = c.getContext('webgl2') || c.getContext('webgl');
+			const x = g && g.getExtension('WEBGL_debug_renderer_info');
+			add('webgl', g ? (x ? g.getParameter(x.UNMASKED_RENDERER_WEBGL) : 'yes') + ' maxTex ' + g.getParameter(g.MAX_TEXTURE_SIZE) : 'NONE');
+		} catch (e) { add('webgl', 'error ' + e); }
+		add('marks (ms)', JSON.stringify(D ? D.marks : {}));
+		L.push('', '--- errors / warnings (last 30) ---');
+		L.push.apply(L, D && D.errs.length ? D.errs : ['(none)']);
+		L.push('', '--- console (last 30) ---');
+		L.push.apply(L, D && D.all.length ? D.all : ['(none)']);
+		return L.join('\n');
+	}
+	const diagEl = document.getElementById('diag');
+	function openDiag() {
+		let pre = document.getElementById('diagpre');
+		if (!pre) { pre = document.createElement('pre'); pre.id = 'diagpre'; document.getElementById('diagbody').appendChild(pre); }
+		pre.textContent = diagText();
+		diagEl.classList.add('on');
+	}
+	document.getElementById('diagclose').addEventListener('click', function () { diagEl.classList.remove('on'); });
+	document.getElementById('diagcopy').addEventListener('click', function () {
+		try { navigator.clipboard.writeText(diagText()); } catch (e) { /* the text is selectable anyway */ }
+	});
+	function bindStamp(el) {
+		let n = 0, first = 0, last = 0;
+		function tap() {
+			const now = Date.now();
+			if (now - last < 80) return;   // pointerup + click of the same tap
+			last = now;
+			if (now - first > 4000) { n = 0; first = now; }
+			if (++n >= 5) { n = 0; openDiag(); }
+		}
+		el.addEventListener('pointerup', tap);
+		el.addEventListener('click', tap);
+	}
+	const stampEl = document.getElementById('build'), pstamp = document.getElementById('pbuild');
+	pstamp.textContent = stampEl.textContent;
+	bindStamp(stampEl); bindStamp(pstamp);
+	window.fiWeb.openDiag = openDiag;
 }());
 </script>
 </body>

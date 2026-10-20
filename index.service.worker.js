@@ -5,10 +5,10 @@
 //    old cache when unchanged, otherwise fetched by the page right after the reload), then skips waiting, takes
 //    control of open pages and deletes the old caches. The page (web/shell.html) reloads itself ONCE on
 //    'controllerchange', so the child always plays the newest build without waiting for the next launch.
-const VERSION = "b994233b6200";
+const VERSION = "0ff6add7285c";
 const PREFIX = 'family-island-';
 const CACHE = PREFIX + VERSION;
-const FILES = {"icons/icon_144.png": "66a15b137e9d", "icons/icon_180.png": "3bbe39fa36c1", "icons/icon_192.png": "ac148de1fe86", "icons/icon_32.png": "f803afffa77f", "icons/icon_512.png": "592fbe7583c8", "icons/icon_maskable_512.png": "e3a2ec70ca40", "icons/loading.png": "a9f1ca235e69", "icons/loading_hd.png": "c835671559df", "icons/ui_button.png": "de03f51e0be4", "icons/ui_button_pressed.png": "bd2191485d1f", "icons/walk_boy.png": "50aefcea3d15", "icons/walk_chick.png": "ca60246e7172", "icons/walk_chicken.png": "b35a9abbb6f2", "icons/walk_dog.png": "657a23100c8e", "icons/walk_girl.png": "b09076059bcd", "index.audio.position.worklet.js": "006bd6de7d9b", "index.audio.worklet.js": "fa4ddbcecba3", "index.html": "84908448c35d", "index.js": "b54de01ebd11", "index.manifest.json": "41d73677245e", "index.offline.html": "3c991f866ab3", "index.pck": "58cd9e6daf63", "index.wasm": "c91d71625bc4", "licenses/Almarai-OFL.txt": "1e8170c0c1c0"};
+const FILES = {"icons/icon_144.png": "66a15b137e9d", "icons/icon_180.png": "3bbe39fa36c1", "icons/icon_192.png": "ac148de1fe86", "icons/icon_32.png": "f803afffa77f", "icons/icon_512.png": "592fbe7583c8", "icons/icon_maskable_512.png": "e3a2ec70ca40", "icons/loading.png": "a9f1ca235e69", "icons/loading_hd.png": "c835671559df", "icons/ui_button.png": "de03f51e0be4", "icons/ui_button_pressed.png": "bd2191485d1f", "icons/walk_boy.png": "50aefcea3d15", "icons/walk_chick.png": "ca60246e7172", "icons/walk_chicken.png": "b35a9abbb6f2", "icons/walk_dog.png": "657a23100c8e", "icons/walk_girl.png": "b09076059bcd", "index.audio.position.worklet.js": "006bd6de7d9b", "index.audio.worklet.js": "fa4ddbcecba3", "index.html": "99cf6e427656", "index.js": "b54de01ebd11", "index.manifest.json": "41d73677245e", "index.offline.html": "3c991f866ab3", "index.pck": "f9a33c37bdd7", "index.wasm": "c91d71625bc4", "licenses/Almarai-OFL.txt": "1e8170c0c1c0"};
 const BIG = ["index.pck", "index.wasm"];
 const ALL = Object.keys(FILES);
 const OFFLINE = 'index.offline.html';
